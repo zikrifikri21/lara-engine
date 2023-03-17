@@ -25,11 +25,53 @@ class CreateTableController extends Controller
     {
         $menu = Menu::where('parent_id', null)->get();
         $tables = DB::select('SHOW TABLES');
-        $databases = DB::select('SHOW DATABASES');
-        $databases = array_map(function ($database) {
-            return $database->Database;
-        }, $databases);
-        return view('dashboard.superadmin.createtable.index', compact('menu', 'tables', 'databases'));
+
+        $nodes = [];
+        $links = [];
+
+        foreach ($tables as $table) {
+            $tableName = $table->{'Tables_in_' . env('DB_DATABASE')};
+            $columns = DB::select('SHOW COLUMNS FROM ' . $tableName);
+
+            $node = [
+                'key' => $tableName,
+                'name' => $tableName,
+                'fields' => []
+            ];
+
+            foreach ($columns as $column) {
+                $columnName = $column->Field;
+                array_push($node['fields'], $columnName);
+            }
+
+            array_push($nodes, $node);
+
+            $foreignKeys = DB::select("
+                SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+                FROM information_schema.key_column_usage
+                WHERE TABLE_NAME = '" . $tableName . "'
+                AND REFERENCED_TABLE_NAME IS NOT NULL;
+            ");
+
+            foreach ($foreignKeys as $foreignKey) {
+                $from = $tableName;
+                $to = $foreignKey->REFERENCED_TABLE_NAME;
+                $fromField = $foreignKey->COLUMN_NAME;
+                $toField = $foreignKey->REFERENCED_COLUMN_NAME;
+
+                $link = [
+                    'from' => $from,
+                    'to' => $to,
+                    'fromField' => $fromField,
+                    'toField' => $toField
+                ];
+
+                array_push($links, $link);
+            }
+        }
+
+        return view('dashboard.superadmin.createtable.index',compact('menu','nodes','tables','links')
+        );
     }
 
     /**
